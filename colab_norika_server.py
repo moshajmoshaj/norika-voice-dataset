@@ -69,8 +69,11 @@ def install_cloudflared():
     else:
         print("  ✅ cloudflared 準備済み", flush=True)
 
-def download_model_from_home():
-    print("\n[3/5] 自宅 PC から藤原紀香 AIボイス公式モデルを自動取得...", flush=True)
+RELEASE_BASE_URL = "https://github.com/moshajmoshaj/norika-voice-dataset/releases/download/v2.0.0"
+HOME_MODEL_FALLBACK_URL = os.environ.get("HOME_VOICE_URL", "https://voice.moshaj.com")
+
+def download_model():
+    print("\n[3/5] 高速 CDN (GitHub Releases) から藤原紀香 AIボイス公式モデルを瞬速取得...", flush=True)
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
     files = [
@@ -81,30 +84,18 @@ def download_model_from_home():
 
     for fname, target_path in files:
         if target_path.exists() and target_path.stat().st_size > 1000:
-            print(f"  ✅ 既存モデルあり: {fname} ({target_path.stat().st_size / 1024 / 1024:.1f} MB)", flush=True)
+            print(f"  [OK] 既存モデルあり: {fname} ({target_path.stat().st_size / 1024 / 1024:.1f} MB)", flush=True)
             continue
 
-        remote_url = f"{HOME_TUNNEL_URL}/model/{fname}"
-        print(f"  ダウンロード開始: {remote_url} -> {target_path.name}...", flush=True)
+        cdn_url = f"{RELEASE_BASE_URL}/{fname}"
+        print(f"  [FAST-CDN] 高速ダウンロード中: {fname}...", flush=True)
         try:
-            req = urllib.request.Request(remote_url, headers={"User-Agent": "ColabNorikaGpu/1.0"})
-            with urllib.request.urlopen(req, timeout=60) as resp, open(target_path, "wb") as out_f:
-                total_size = int(resp.headers.get("content-length", 0))
-                downloaded = 0
-                block_size = 1024 * 1024 # 1MB
-                while True:
-                    chunk = resp.read(block_size)
-                    if not chunk:
-                        break
-                    out_f.write(chunk)
-                    downloaded += len(chunk)
-                    if total_size > 0:
-                        pct = (downloaded / total_size) * 100
-                        print(f"\r    進捗: {downloaded/1024/1024:.1f}MB / {total_size/1024/1024:.1f}MB ({pct:.1f}%)", end="", flush=True)
-            print(f"\n  ✅ 取得完了: {fname} ({target_path.stat().st_size / 1024 / 1024:.1f} MB)", flush=True)
+            subprocess.run(["curl", "-LsSf", "-o", str(target_path), cdn_url], check=True)
+            print(f"  [OK] 取得完了: {fname} ({target_path.stat().st_size / 1024 / 1024:.1f} MB)", flush=True)
         except Exception as ex:
-            print(f"\n  ❌ ダウンロード失敗 ({fname}): {ex}", flush=True)
-            raise
+            print(f"  [WARN] CDN 取得失敗 ({fname}): {ex} -> 自宅 PC からフォールバック取得中...", flush=True)
+            fallback_url = f"{HOME_MODEL_FALLBACK_URL}/model/{fname}"
+            subprocess.run(["curl", "-LsSf", "-o", str(target_path), fallback_url], check=True)
 
 def load_vits2_model():
     global _tts_model
@@ -271,6 +262,6 @@ def start_server_and_tunnel():
 if __name__ == "__main__":
     check_gpu()
     install_cloudflared()
-    download_model_from_home()
+    download_model()
     load_vits2_model()
     start_server_and_tunnel()
