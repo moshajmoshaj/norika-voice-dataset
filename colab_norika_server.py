@@ -211,12 +211,17 @@ def start_server_and_tunnel():
 
     tunnel_url = None
     url_regex = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
+    print("  Cloudflare Tunnel URL を取得中（最大60秒）...", flush=True)
 
-    for _ in range(40):
+    t_start = time.time()
+    while time.time() - t_start < 60:
         line = proc.stdout.readline()
         if not line:
-            time.sleep(0.5)
+            time.sleep(0.3)
             continue
+        line_clean = line.strip()
+        if line_clean and ("trycloudflare" in line_clean or "Registered tunnel" in line_clean or "Connection" in line_clean):
+            print(f"    [cloudflared] {line_clean}", flush=True)
         match = url_regex.search(line)
         if match:
             tunnel_url = match.group(0)
@@ -231,21 +236,29 @@ def start_server_and_tunnel():
     print(f"  [LINK] Colab Tunnel URL: {tunnel_url}", flush=True)
     print(f"=======================================================", flush=True)
 
-    # 3. 自宅 PC の HomeVoiceHub へ自動登録
+    # 3. 自宅 PC の HomeVoiceHub へ自動登録 (最大5回リトライ)
     print(f"\n  自宅 PC ({HOME_TUNNEL_URL}) へ Colab GPU を自動登録中...", flush=True)
-    try:
-        reg_url = f"{HOME_TUNNEL_URL}/api/colab/register"
-        req_data = json.dumps({"url": tunnel_url}).encode("utf-8")
-        req = urllib.request.Request(
-            reg_url,
-            data=req_data,
-            headers={"Content-Type": "application/json", "User-Agent": "ColabNorikaGpu/1.0"}
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            resp_body = resp.read().decode("utf-8")
-            print(f"  ✅ 自宅 PC への自動登録完了！: {resp_body}", flush=True)
-    except Exception as ex:
-        print(f"  ⚠️ 自宅 PC への自動通知でエラー (手動でも可): {ex}", flush=True)
+    registered_successfully = False
+    for attempt in range(1, 6):
+        try:
+            reg_url = f"{HOME_TUNNEL_URL}/api/colab/register"
+            req_data = json.dumps({"url": tunnel_url}).encode("utf-8")
+            req = urllib.request.Request(
+                reg_url,
+                data=req_data,
+                headers={"Content-Type": "application/json", "User-Agent": "ColabNorikaGpu/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                resp_body = resp.read().decode("utf-8")
+                print(f"  ✅ 自宅 PC への自動登録完了！(試行 {attempt}/5): {resp_body}", flush=True)
+                registered_successfully = True
+                break
+        except Exception as ex:
+            print(f"  ⚠️ 自宅 PC への自動登録で一時エラー (試行 {attempt}/5): {ex}", flush=True)
+            time.sleep(2)
+
+    if not registered_successfully:
+        print(f"\n⚠️ 自宅 PC への自動登録がタイムアウトしました。お立ち台画面で下記 URL を直接貼り付けてください:\n  👉 {tunnel_url}\n", flush=True)
 
     # 4. 定期ハートビート（Ping / 生存維持）バックグラウンドスレッドの起動
     def heartbeat_loop(t_url):
