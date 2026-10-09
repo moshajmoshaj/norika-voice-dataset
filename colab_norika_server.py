@@ -270,6 +270,25 @@ def start_server_and_tunnel():
     hb_thread.start()
     print("  ✅ 自宅 PC への自動生存維持（45秒ハートビート）を開始しました", flush=True)
 
+    # 5. 定期 GPU ウォームアップ（GPU Activity Keep-Alive / Compute アイドル回収防止）
+    def gpu_warmup_loop():
+        while True:
+            time.sleep(180)  # 3分間隔で超軽量推論を実行
+            try:
+                if _tts_model is not None:
+                    t0 = time.time()
+                    _ = _tts_model.infer(text="はい。")
+                    dur_ms = (time.time() - t0) * 1000
+                    now_str = time.strftime("%H:%M:%S")
+                    print(f"[{now_str} GPU-KeepAlive] 定期ウォームアップ推論完了 ({dur_ms:.1f}ms) - GPU活動状態を維持中", flush=True)
+            except Exception as ex:
+                now_str = time.strftime("%H:%M:%S")
+                print(f"[{now_str} GPU-KeepAlive Warn] ウォームアップ例外: {ex}", flush=True)
+
+    warmup_thread = threading.Thread(target=gpu_warmup_loop, daemon=True)
+    warmup_thread.start()
+    print("  ✅ Google Colab GPU アイドル回収防止（3分定期ウォームアップ推論）を開始しました", flush=True)
+
     print("\n[Norika] すべての準備が完了しました！", flush=True)
     print("[INFO] スマホから話しかけると、NVIDIA GPU により【0.3秒】で紀香ボイスが即座に返ってきます！", flush=True)
     print("（このセルの実行を停止するまで、GPU推論サーバーは常駐し続けます）\n", flush=True)
