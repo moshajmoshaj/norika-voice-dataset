@@ -247,6 +247,29 @@ def start_server_and_tunnel():
     except Exception as ex:
         print(f"  ⚠️ 自宅 PC への自動通知でエラー (手動でも可): {ex}", flush=True)
 
+    # 4. 定期ハートビート（Ping / 生存維持）バックグラウンドスレッドの起動
+    def heartbeat_loop(t_url):
+        reg_url = f"{HOME_TUNNEL_URL}/api/colab/register"
+        heartbeat_payload = json.dumps({"url": t_url, "heartbeat": True}).encode("utf-8")
+        while True:
+            time.sleep(45)  # 45秒間隔
+            try:
+                hb_req = urllib.request.Request(
+                    reg_url,
+                    data=heartbeat_payload,
+                    headers={"Content-Type": "application/json", "User-Agent": "ColabNorikaGpu-KeepAlive/1.0"}
+                )
+                with urllib.request.urlopen(hb_req, timeout=8) as resp:
+                    now_str = time.strftime("%H:%M:%S")
+                    print(f"[{now_str} KeepAlive] 自宅 PC へ GPU 生存ハートビート送信成功 (HTTP {resp.status})", flush=True)
+            except Exception as ex:
+                now_str = time.strftime("%H:%M:%S")
+                print(f"[{now_str} KeepAlive Warn] 自宅 PC へのハートビート一時失敗 (次回再試行): {ex}", flush=True)
+
+    hb_thread = threading.Thread(target=heartbeat_loop, args=(tunnel_url,), daemon=True)
+    hb_thread.start()
+    print("  ✅ 自宅 PC への自動生存維持（45秒ハートビート）を開始しました", flush=True)
+
     print("\n[Norika] すべての準備が完了しました！", flush=True)
     print("[INFO] スマホから話しかけると、NVIDIA GPU により【0.3秒】で紀香ボイスが即座に返ってきます！", flush=True)
     print("（このセルの実行を停止するまで、GPU推論サーバーは常駐し続けます）\n", flush=True)
